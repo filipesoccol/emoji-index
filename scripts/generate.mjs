@@ -21,7 +21,6 @@ const stringChunks = []
 const stringMap = new Map()
 let stringOffset = 0
 
-// Pre-add empty string so ref=0 always means empty
 stringMap.set('', 0)
 
 function addString (str) {
@@ -37,20 +36,7 @@ function addString (str) {
   return ref
 }
 
-// ==================== Tag Dictionary ====================
-
-const tagList = []
-const tagMap = new Map()
-
-function addTag (tag) {
-  if (tagMap.has(tag)) return tagMap.get(tag)
-  const idx = tagList.length
-  tagList.push(addString(tag))
-  tagMap.set(tag, idx)
-  return idx
-}
-
-// ==================== Skin Derivation Check ====================
+// ==================== Skin Derivation ====================
 
 const TONE_HEX = { 1: '1F3FB', 2: '1F3FC', 3: '1F3FD', 4: '1F3FE', 5: '1F3FF' }
 const TONE_LABEL = {
@@ -76,60 +62,47 @@ function deriveLabel (parentLabel, tone) {
   return parentLabel + ': ' + TONE_LABEL[tone]
 }
 
-function deriveSC (parentSCs, tone) {
-  return parentSCs.map(s => s + '_tone' + tone)
-}
-
 function isDerivable (e) {
   if (!e.skins || e.skins.length !== 5) return false
-
   const parentSCs = e.shortCodes || []
-  const parentPts = toCodepoints(e.emoji)
-
   for (let i = 0; i < 5; i++) {
     const sk = e.skins[i]
     const tone = sk.tone
     if (!tone || tone < 1 || tone > 5) return false
-
     if (sk.hexcode !== deriveHex(e.hexcode, tone)) return false
     if (sk.label !== deriveLabel(e.label, tone)) return false
-
-    const expectedSCs = deriveSC(parentSCs, tone)
+    const expectedSCs = parentSCs.map(s => s + '_tone' + tone)
     const skinSCs = sk.shortCodes || []
     if (skinSCs.length !== expectedSCs.length) return false
     for (let j = 0; j < skinSCs.length; j++) {
       if (skinSCs[j] !== expectedSCs[j]) return false
     }
   }
-
   return true
 }
 
-// ==================== Encode ====================
+// ==================== Encode Emojis ====================
 
-// EMOJI_RECORDS: 9 Uint32 per emoji (stripped text slot)
+// EMOJI_RECORDS: 8 Uint32 per emoji
 //   [0] labelRef
 //   [1] hexcodeRef
 //   [2] pointsStart | (pointsCount << 16)
-//   [3] tagRefsStart | (tagRefsCount << 16)
-//   [4] scStart | (scCount << 16)
-//   [5] emStart | (emCount << 16)
-//   [6] skStart | (skCount << 16)   -- for explicit skins; skCount=0 if derivable
-//   [7] group(4) | hasOrder(1) | hasSkins5(1) | 0(26)
-//   [8] order
+//   [3] scStart | (scCount << 16)
+//   [4] emStart | (emCount << 16)
+//   [5] skStart | (skCount << 16)
+//   [6] group(4) | hasOrder(1) | hasSkins5(1)
+//   [7] order
 
-// SKIN_RECORDS: 5 Uint32 per skin (only non-derivable skins)
-//   [0] hexcodeRef
-//   [1] labelRef
+// SKIN_RECORDS: 5 Uint32 per skin (non-derivable only)
+//   [0] hexcodeRef  [1] labelRef
 //   [2] pointsStart | (pointsCount << 16)
 //   [3] scStart | (scCount << 16)
-//   [4] tone(8) | group(4) | 0(20)
+//   [4] tone(8) | group(4)
 
-const EMOJI_REC_SIZE = 9
+const EMOJI_REC_SIZE = 8
 const SKIN_REC_SIZE = 5
 
 const points = []
-const tagRefs = []
 const shortcodeRefs = []
 const emoticonRefs = []
 const emojiRecs = []
@@ -144,22 +117,14 @@ for (let ei = 0; ei < data.length; ei++) {
   const labelRef = addString(e.label || '')
   const hexRef = addString(e.hexcode || '')
 
-  // Codepoints
   const ptStart = points.length
   for (const cp of toCodepoints(e.emoji)) points.push(cp)
   const ptCount = points.length - ptStart
 
-  // Tags
-  const trStart = tagRefs.length
-  if (e.tags) for (const t of e.tags) tagRefs.push(addTag(t))
-  const trCount = tagRefs.length - trStart
-
-  // Shortcodes
   const scStart = shortcodeRefs.length
   if (e.shortCodes) for (const s of e.shortCodes) shortcodeRefs.push(addString(s))
   const scCount = shortcodeRefs.length - scStart
 
-  // Emoticons
   const emStart = emoticonRefs.length
   if (e.emoticon) {
     const arr = Array.isArray(e.emoticon) ? e.emoticon : [e.emoticon]
@@ -167,7 +132,6 @@ for (let ei = 0; ei < data.length; ei++) {
   }
   const emCount = emoticonRefs.length - emStart
 
-  // Skins
   let skStart = 0
   let skCount = 0
   const derivable = isDerivable(e)
@@ -177,24 +141,13 @@ for (let ei = 0; ei < data.length; ei++) {
     for (const sk of e.skins) {
       const skHexRef = addString(sk.hexcode || '')
       const skLabelRef = addString(sk.label || '')
-
       const skPtStart = points.length
       for (const cp of toCodepoints(sk.emoji)) points.push(cp)
       const skPtCount = points.length - skPtStart
-
       const skScStart = shortcodeRefs.length
       if (sk.shortCodes) for (const s of sk.shortCodes) shortcodeRefs.push(addString(s))
       const skScCount = shortcodeRefs.length - skScStart
-
-      const skGroup = sk.group || 0
-
-      skinRecs.push(
-        skHexRef,                              // [0]
-        skLabelRef,                            // [1]
-        skPtStart | (skPtCount << 16),         // [2]
-        skScStart | (skScCount << 16),         // [3]
-        (sk.tone || 0) | (skGroup << 8)        // [4]
-      )
+      skinRecs.push(skHexRef, skLabelRef, skPtStart | (skPtCount << 16), skScStart | (skScCount << 16), (sk.tone || 0) | ((sk.group || 0) << 8))
       skCount++
     }
     explicitSkins += skCount
@@ -202,26 +155,23 @@ for (let ei = 0; ei < data.length; ei++) {
     derivedSkins += 5
   }
 
-  // Pack metadata: group(4) | hasOrder(1) | hasSkins5(1)
   const group = e.group || 0
   const hasOrder = 'order' in e ? 1 : 0
   const hasSkins5 = derivable ? 1 : 0
   const packed = group | (hasOrder << 4) | (hasSkins5 << 5)
 
   emojiRecs.push(
-    labelRef,                              // [0]
-    hexRef,                                // [1]
-    ptStart | (ptCount << 16),             // [2]
-    trStart | (trCount << 16),             // [3]
-    scStart | (scCount << 16),             // [4]
-    emStart | (emCount << 16),             // [5]
-    skStart | (skCount << 16),             // [6]
-    packed,                                // [7]
-    hasOrder ? e.order : 0                 // [8]
+    labelRef, hexRef,
+    ptStart | (ptCount << 16),
+    scStart | (scCount << 16),
+    emStart | (emCount << 16),
+    skStart | (skCount << 16),
+    packed,
+    hasOrder ? e.order : 0
   )
 }
 
-// Groups from messages
+// Groups
 const groupRecs = []
 if (messages && messages.groups) {
   for (const g of messages.groups) {
@@ -229,33 +179,97 @@ if (messages && messages.groups) {
   }
 }
 
+// ==================== Tag Inverted Index (Roaring) ====================
+
+// Build inverted index: sorted tag → Set of emoji indices
+const tagInverted = new Map()
+for (let ei = 0; ei < data.length; ei++) {
+  if (!data[ei].tags) continue
+  for (const tag of data[ei].tags) {
+    if (!tagInverted.has(tag)) tagInverted.set(tag, [])
+    tagInverted.get(tag).push(ei)
+  }
+}
+
+const sortedTags = [...tagInverted.keys()].sort()
+const tagCount = sortedTags.length
+
+// Encode tag strings (sorted, concatenated)
+const tagStrChunks = []
+const tagStrOffsets = [0]
+let tagStrOffset = 0
+for (const tag of sortedTags) {
+  const buf = Buffer.from(tag, 'utf8')
+  tagStrChunks.push(buf)
+  tagStrOffset += buf.length
+  tagStrOffsets.push(tagStrOffset)
+}
+const TAG_STR_BUF = Buffer.concat(tagStrChunks)
+
+// Roaring encode posting lists
+// Threshold: if cardinality > BITMAP_WORDS, use bitmap (it's smaller)
+const BITMAP_WORDS = Math.ceil(data.length / 16)
+
+const postingWords = []
+const postingOffsets = [0]
+const postingFlags = new Uint8Array(Math.ceil(tagCount / 8))
+let bitmapCount = 0
+
+for (let ti = 0; ti < tagCount; ti++) {
+  const emojiIds = tagInverted.get(sortedTags[ti])
+
+  if (emojiIds.length > BITMAP_WORDS) {
+    // Bitmap encoding
+    postingFlags[ti >> 3] |= (1 << (ti & 7))
+    const bitmap = new Uint16Array(BITMAP_WORDS)
+    for (const eid of emojiIds) {
+      bitmap[eid >> 4] |= (1 << (eid & 0xF))
+    }
+    for (let w = 0; w < BITMAP_WORDS; w++) postingWords.push(bitmap[w])
+    bitmapCount++
+  } else {
+    // Array encoding (sorted Uint16 emoji IDs)
+    emojiIds.sort((a, b) => a - b)
+    for (const eid of emojiIds) postingWords.push(eid)
+  }
+
+  postingOffsets.push(postingWords.length)
+}
+
 // ==================== Assemble Binary ====================
 
 const EMOJI_BUF = new Uint32Array(emojiRecs)
 const SKIN_BUF = new Uint32Array(skinRecs)
-const TAG_DICT_BUF = new Uint32Array(tagList)
 const SC_BUF = new Uint32Array(shortcodeRefs)
 const EM_BUF = new Uint32Array(emoticonRefs)
 const GRP_BUF = new Uint32Array(groupRecs)
 const PT_BUF = new Uint32Array(points)
-const TR_BUF = new Uint16Array(tagRefs)
+
+const TAG_STR_OFF_BUF = new Uint16Array(tagStrOffsets)
+const POST_OFF_BUF = new Uint16Array(postingOffsets)
+const POST_BUF = new Uint16Array(postingWords)
+
 const STR_BUF = Buffer.concat(stringChunks)
 
 const toRaw = (arr) => Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength)
 
+// Order: Uint32 sections, Uint16 sections, raw sections
 const INDEX = Buffer.concat([
   toRaw(EMOJI_BUF),
   toRaw(SKIN_BUF),
-  toRaw(TAG_DICT_BUF),
   toRaw(SC_BUF),
   toRaw(EM_BUF),
   toRaw(GRP_BUF),
   toRaw(PT_BUF),
-  toRaw(TR_BUF),
+  toRaw(TAG_STR_OFF_BUF),
+  toRaw(POST_OFF_BUF),
+  toRaw(POST_BUF),
+  Buffer.from(postingFlags),
+  TAG_STR_BUF,
   STR_BUF
 ])
 
-// ==================== Write raw-index.js ====================
+// ==================== Write ====================
 
 let s = `// https://emojibase.dev version ${version}\n\n`
 s += "const b4a = require('b4a')\n"
@@ -264,18 +278,22 @@ s += `const INDEX = b4a.from('${INDEX.toString('base64')}', 'base64')\n\n`
 
 s += `exports.EMOJI_COUNT = ${data.length}\n`
 s += `exports.SKIN_COUNT = ${skinRecs.length / SKIN_REC_SIZE}\n`
-s += `exports.TAG_DICT_COUNT = ${tagList.length}\n`
+s += `exports.TAG_COUNT = ${tagCount}\n`
+s += `exports.BITMAP_WORDS = ${BITMAP_WORDS}\n`
 s += `exports.GROUP_COUNT = ${groupRecs.length / 2}\n\n`
 
 let n = 0
 s += `exports.EMOJI_RECORDS = to32(${n}, ${n += EMOJI_BUF.byteLength})\n`
 s += `exports.SKIN_RECORDS = to32(${n}, ${n += SKIN_BUF.byteLength})\n`
-s += `exports.TAG_DICT = to32(${n}, ${n += TAG_DICT_BUF.byteLength})\n`
 s += `exports.SHORTCODES = to32(${n}, ${n += SC_BUF.byteLength})\n`
 s += `exports.EMOTICONS = to32(${n}, ${n += EM_BUF.byteLength})\n`
 s += `exports.GROUPS = to32(${n}, ${n += GRP_BUF.byteLength})\n`
 s += `exports.POINTS = to32(${n}, ${n += PT_BUF.byteLength})\n`
-s += `exports.TAG_REFS = to16(${n}, ${n += TR_BUF.byteLength})\n`
+s += `exports.TAG_STR_OFFSETS = to16(${n}, ${n += TAG_STR_OFF_BUF.byteLength})\n`
+s += `exports.POSTING_OFFSETS = to16(${n}, ${n += POST_OFF_BUF.byteLength})\n`
+s += `exports.POSTINGS = to16(${n}, ${n += POST_BUF.byteLength})\n`
+s += `exports.POSTING_FLAGS = INDEX.subarray(${n}, ${n += postingFlags.length})\n`
+s += `exports.TAG_STRINGS = INDEX.subarray(${n}, ${n += TAG_STR_BUF.length})\n`
 s += `exports.STRINGS = INDEX.subarray(${n}, ${n += STR_BUF.length})\n`
 s += '\n'
 s += `function to16 (offset, end) {
@@ -297,9 +315,9 @@ console.log(`Wrote ${out}`)
 console.log(`  Binary: ${sizeKB} KB`)
 console.log(`  Base64: ${base64KB} KB`)
 console.log(`  Emojis: ${data.length}`)
-console.log(`  Explicit skins: ${explicitSkins} (stored)`)
-console.log(`  Derived skins: ${derivedSkins} (generated at runtime)`)
-console.log(`  Unique tags: ${tagList.length}`)
+console.log(`  Explicit skins: ${explicitSkins} | Derived: ${derivedSkins}`)
+console.log(`  Tags: ${tagCount} unique (${bitmapCount} bitmap, ${tagCount - bitmapCount} array)`)
+console.log(`  Postings: ${postingWords.length} Uint16 words`)
 console.log(`  Shortcodes: ${shortcodeRefs.length}`)
 console.log(`  Points: ${points.length}`)
 console.log(`  Strings: ${STR_BUF.length} bytes`)

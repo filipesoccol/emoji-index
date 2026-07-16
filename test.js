@@ -90,6 +90,30 @@ test('decode emoji has no stripped fields', function (t) {
   t.is(first.subgroup, undefined, 'subgroup stripped')
 })
 
+test('searchTags exact match', function (t) {
+  const result = e.searchTags('face')
+  t.ok(result.exact.length > 50, 'many emojis tagged face: ' + result.exact.length)
+  t.ok(result.prefix.length >= 0, 'prefix may include face* tags')
+})
+
+test('searchTags prefix match', function (t) {
+  const result = e.searchTags('hap')
+  t.ok(result.exact.length === 0, 'no exact match for hap')
+  t.ok(result.prefix.length > 0, 'prefix matches for hap: ' + result.prefix.length)
+})
+
+test('searchTags contains match', function (t) {
+  const result = e.searchTags('mil')
+  t.ok(result.contains.length > 0, 'contains matches for mil: ' + result.contains.length)
+})
+
+test('searchTags no match', function (t) {
+  const result = e.searchTags('zzzznotag')
+  t.is(result.exact.length, 0)
+  t.is(result.prefix.length, 0)
+  t.is(result.contains.length, 0)
+})
+
 test('decode consistency with toEmoji/toShortCode', function (t) {
   const { emojis } = e.decode()
 
