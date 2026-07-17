@@ -29,11 +29,30 @@ exports.searchTags = function searchTags (term) {
   const prefix = []
   const contains = []
 
-  for (let ti = 0; ti < r.TAG_COUNT; ti++) {
+  // Exact: O(log n) binary search on sorted tags
+  let lo = 0
+  let hi = r.TAG_COUNT
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (tags[mid] < target) lo = mid + 1
+    else hi = mid
+  }
+
+  // From lower bound: exact + prefix matches are consecutive
+  for (let ti = lo; ti < r.TAG_COUNT; ti++) {
     const tag = tags[ti]
     if (tag === target) appendPosting(r, ti, exact)
     else if (tag.startsWith(target)) appendPosting(r, ti, prefix)
-    else if (tag.includes(target)) appendPosting(r, ti, contains)
+    else break
+  }
+
+  // Contains: O(n) full scan, skipping already matched range
+  for (let ti = 0; ti < lo; ti++) {
+    if (tags[ti].includes(target)) appendPosting(r, ti, contains)
+  }
+  const rangeEnd = lo + exact.length + prefix.length
+  for (let ti = rangeEnd; ti < r.TAG_COUNT; ti++) {
+    if (tags[ti].includes(target)) appendPosting(r, ti, contains)
   }
 
   return { exact, prefix, contains }
