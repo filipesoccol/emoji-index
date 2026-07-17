@@ -179,9 +179,9 @@ if (messages && messages.groups) {
   }
 }
 
-// ==================== Tag Inverted Index (Roaring) ====================
+// ==================== Tag Inverted Index ====================
 
-// Build inverted index: sorted tag → Set of emoji indices
+// Build inverted index: sorted tag → sorted emoji indices
 const tagInverted = new Map()
 for (let ei = 0; ei < data.length; ei++) {
   if (!data[ei].tags) continue
@@ -206,33 +206,14 @@ for (const tag of sortedTags) {
 }
 const TAG_STR_BUF = Buffer.concat(tagStrChunks)
 
-// Roaring encode posting lists
-// Threshold: if cardinality > BITMAP_WORDS, use bitmap (it's smaller)
-const BITMAP_WORDS = Math.ceil(data.length / 16)
-
+// Flat posting lists (sorted Uint16 emoji IDs per tag)
 const postingWords = []
 const postingOffsets = [0]
-const postingFlags = new Uint8Array(Math.ceil(tagCount / 8))
-let bitmapCount = 0
 
 for (let ti = 0; ti < tagCount; ti++) {
   const emojiIds = tagInverted.get(sortedTags[ti])
-
-  if (emojiIds.length > BITMAP_WORDS) {
-    // Bitmap encoding
-    postingFlags[ti >> 3] |= (1 << (ti & 7))
-    const bitmap = new Uint16Array(BITMAP_WORDS)
-    for (const eid of emojiIds) {
-      bitmap[eid >> 4] |= (1 << (eid & 0xF))
-    }
-    for (let w = 0; w < BITMAP_WORDS; w++) postingWords.push(bitmap[w])
-    bitmapCount++
-  } else {
-    // Array encoding (sorted Uint16 emoji IDs)
-    emojiIds.sort((a, b) => a - b)
-    for (const eid of emojiIds) postingWords.push(eid)
-  }
-
+  emojiIds.sort((a, b) => a - b)
+  for (const eid of emojiIds) postingWords.push(eid)
   postingOffsets.push(postingWords.length)
 }
 
@@ -264,7 +245,6 @@ const INDEX = Buffer.concat([
   toRaw(TAG_STR_OFF_BUF),
   toRaw(POST_OFF_BUF),
   toRaw(POST_BUF),
-  Buffer.from(postingFlags),
   TAG_STR_BUF,
   STR_BUF
 ])
@@ -279,7 +259,6 @@ s += `const INDEX = b4a.from('${INDEX.toString('base64')}', 'base64')\n\n`
 s += `exports.EMOJI_COUNT = ${data.length}\n`
 s += `exports.SKIN_COUNT = ${skinRecs.length / SKIN_REC_SIZE}\n`
 s += `exports.TAG_COUNT = ${tagCount}\n`
-s += `exports.BITMAP_WORDS = ${BITMAP_WORDS}\n`
 s += `exports.GROUP_COUNT = ${groupRecs.length / 2}\n\n`
 
 let n = 0
@@ -292,7 +271,6 @@ s += `exports.POINTS = to32(${n}, ${n += PT_BUF.byteLength})\n`
 s += `exports.TAG_STR_OFFSETS = to16(${n}, ${n += TAG_STR_OFF_BUF.byteLength})\n`
 s += `exports.POSTING_OFFSETS = to16(${n}, ${n += POST_OFF_BUF.byteLength})\n`
 s += `exports.POSTINGS = to16(${n}, ${n += POST_BUF.byteLength})\n`
-s += `exports.POSTING_FLAGS = INDEX.subarray(${n}, ${n += postingFlags.length})\n`
 s += `exports.TAG_STRINGS = INDEX.subarray(${n}, ${n += TAG_STR_BUF.length})\n`
 s += `exports.STRINGS = INDEX.subarray(${n}, ${n += STR_BUF.length})\n`
 s += '\n'
@@ -316,7 +294,7 @@ console.log(`  Binary: ${sizeKB} KB`)
 console.log(`  Base64: ${base64KB} KB`)
 console.log(`  Emojis: ${data.length}`)
 console.log(`  Explicit skins: ${explicitSkins} | Derived: ${derivedSkins}`)
-console.log(`  Tags: ${tagCount} unique (${bitmapCount} bitmap, ${tagCount - bitmapCount} array)`)
+console.log(`  Tags: ${tagCount} unique`)
 console.log(`  Postings: ${postingWords.length} Uint16 words`)
 console.log(`  Shortcodes: ${shortcodeRefs.length}`)
 console.log(`  Points: ${points.length}`)

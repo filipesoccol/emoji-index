@@ -14,11 +14,6 @@ const TONE_LABEL = [
   'dark skin tone'
 ]
 
-// Count trailing zeros via 32-bit debruijn
-/* eslint-disable comma-spacing */
-const CTZ_DEBRUIJN = [0,1,28,2,29,14,24,3,30,22,20,15,25,17,4,8,31,27,13,23,21,19,16,7,26,12,18,6,11,5,10,9]
-/* eslint-enable comma-spacing */
-
 let _raw = null
 let _scToEmoji = null
 let _emojiToSc = null
@@ -97,6 +92,7 @@ function initLookups () {
 // searchTags(term) returns { exact: number[], prefix: number[], contains: number[] }
 // Each array is sorted emoji indices matching the given priority.
 exports.searchTags = function searchTags (term) {
+  console.log('aaaa')
   const r = raw()
   const tags = tagStrs()
   const target = term.toLowerCase()
@@ -116,25 +112,9 @@ exports.searchTags = function searchTags (term) {
 }
 
 function appendPosting (r, ti, out) {
-  const isBitmap = (r.POSTING_FLAGS[ti >> 3] >> (ti & 7)) & 1
   const start = r.POSTING_OFFSETS[ti]
   const end = r.POSTING_OFFSETS[ti + 1]
-
-  if (isBitmap) {
-    for (let w = 0; w < r.BITMAP_WORDS; w++) {
-      let word = r.POSTINGS[start + w]
-      const base = w << 4
-      while (word) {
-        const bit = word & (-word)
-        out.push(base + CTZ_DEBRUIJN[((bit * 0x077CB531) >>> 27) & 0x1F])
-        word ^= bit
-      }
-    }
-  } else {
-    for (let i = start; i < end; i++) {
-      out.push(r.POSTINGS[i])
-    }
-  }
+  for (let i = start; i < end; i++) out.push(r.POSTINGS[i])
 }
 
 // ==================== Full Data API ====================
