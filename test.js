@@ -1,5 +1,6 @@
 const test = require('brittle')
 const e = require('./')
+const t_ = require('./tags')
 
 test('shortcodes to emoji', function (t) {
   t.is(e.toEmoji('neutral'), '😐️')
@@ -37,8 +38,9 @@ test('decode returns emojis', function (t) {
   t.is(typeof first.group, 'number')
 })
 
-test('decode emoji has tags', function (t) {
+test('attachTags adds tags to decoded emojis', function (t) {
   const { emojis } = e.decode()
+  t_.attachTags(emojis)
 
   const grinning = emojis.find(em => em.shortCodes.includes('grinning'))
   t.ok(grinning, 'found grinning emoji')
@@ -91,24 +93,24 @@ test('decode emoji has no stripped fields', function (t) {
 })
 
 test('searchTags exact match', function (t) {
-  const result = e.searchTags('face')
+  const result = t_.searchTags('face')
   t.ok(result.exact.length > 50, 'many emojis tagged face: ' + result.exact.length)
   t.ok(result.prefix.length >= 0, 'prefix may include face* tags')
 })
 
 test('searchTags prefix match', function (t) {
-  const result = e.searchTags('hap')
+  const result = t_.searchTags('hap')
   t.ok(result.exact.length === 0, 'no exact match for hap')
   t.ok(result.prefix.length > 0, 'prefix matches for hap: ' + result.prefix.length)
 })
 
 test('searchTags contains match', function (t) {
-  const result = e.searchTags('mil')
+  const result = t_.searchTags('mil')
   t.ok(result.contains.length > 0, 'contains matches for mil: ' + result.contains.length)
 })
 
 test('searchTags no match', function (t) {
-  const result = e.searchTags('zzzznotag')
+  const result = t_.searchTags('zzzznotag')
   t.is(result.exact.length, 0)
   t.is(result.prefix.length, 0)
   t.is(result.contains.length, 0)
