@@ -12,80 +12,30 @@ function raw () {
   return _raw
 }
 
-// ==================== Binary Search Lookups ====================
+// ==================== Full Data API ====================
 
-exports.findByHex = function findByHex (hex) {
+exports.decode = function decode () {
   const r = raw()
-  const hexBuf = b4a.from(hex)
-  let lo = 0
-  let hi = r.EMOJI_COUNT
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1
-    const ei = r.HEX_SORTED[mid]
-    const cmp = compareHex(r, ei, hexBuf)
-    if (cmp < 0) lo = mid + 1
-    else if (cmp > 0) hi = mid
-    else return ei
+  const emojis = new Array(r.EMOJI_COUNT)
+  for (let ei = 0; ei < r.EMOJI_COUNT; ei++) {
+    emojis[ei] = decodeEmoji(r, ei)
   }
-  return -1
+  const groups = decodeGroupsFromRaw(r)
+  return { emojis, groups }
 }
 
-exports.findByShortCode = function findByShortCode (sc) {
-  const r = raw()
-  const scBuf = b4a.from(sc)
-  let lo = 0
-  let hi = r.SC_SORTED.length
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1
-    const slot = r.SC_SORTED[mid]
-    const cmp = compareSc(r, slot, scBuf)
-    if (cmp < 0) lo = mid + 1
-    else if (cmp > 0) hi = mid
-    else return r.SC_TO_EMOJI[slot]
-  }
-  return -1
+exports.decodeOne = function decodeOne (emojiIdx) {
+  return decodeEmoji(raw(), emojiIdx)
 }
 
-exports.findByEmoji = function findByEmoji (emojiStr) {
-  // Convert emoji string to hex, then search hex index
-  const pts = []
-  for (const ch of emojiStr) pts.push(ch.codePointAt(0))
-  const hex = pointsToHex(pts)
-  const idx = exports.findByHex(hex)
-  if (idx >= 0) return idx
-  // Try with VS16 stripped (already stripped in pointsToHex)
-  return -1
+exports.decodeGroups = function decodeGroups () {
+  return decodeGroupsFromRaw(raw())
 }
 
-exports.findSkinParent = function findSkinParent (hex) {
-  const r = raw()
-  const hexBuf = b4a.from(hex)
-  let lo = 0
-  let hi = r.SKIN_HEX_COUNT
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1
-    const start = r.SKIN_HEX_OFFSETS[mid]
-    const end = r.SKIN_HEX_OFFSETS[mid + 1]
-    const cmp = b4a.compare(r.SKIN_HEX_STRINGS.subarray(start, end), hexBuf)
-    if (cmp < 0) lo = mid + 1
-    else if (cmp > 0) hi = mid
-    else return r.SKIN_HEX_PARENTS[mid]
-  }
-  return -1
-}
+// ==================== Lightweight Accessors ====================
 
-exports.findSkinParentByEmoji = function findSkinParentByEmoji (emojiStr) {
-  const pts = []
-  for (const ch of emojiStr) pts.push(ch.codePointAt(0))
-  return exports.findSkinParent(pointsToHex(pts))
-}
-
-exports.findSkinParentByShortCode = function findSkinParentByShortCode (sc) {
-  // Skin shortcodes end with _toneN — find parent sc + tone
-  const match = sc.match(/_tone([1-5])$/)
-  if (!match) return -1
-  const parentSc = sc.slice(0, -6)
-  return exports.findByShortCode(parentSc)
+exports.emojiCount = function emojiCount () {
+  return raw().EMOJI_COUNT
 }
 
 exports.labelAt = function labelAt (emojiIdx) {
@@ -103,111 +53,9 @@ exports.hasEmoticon = function hasEmoticon (emojiIdx) {
   return (r.EMOJI_RECORDS[emojiIdx * EMOJI_REC_SIZE + 3] >>> 16) > 0
 }
 
-exports.emojiCount = function emojiCount () {
-  return raw().EMOJI_COUNT
-}
+// ==================== Internal Decode ====================
 
-// ==================== Binary Search Helpers ====================
-
-function compareHex (r, emojiIdx, hexBuf) {
-  // Build hex from stored codepoints, compare byte-by-byte against hexBuf
-  const base = emojiIdx * EMOJI_REC_SIZE
-  const ptPacked = r.EMOJI_RECORDS[base + 1]
-  const ptStart = ptPacked & 0xFFFF
-  const ptCount = ptPacked >>> 16
-
-  // Build hex bytes on the fly
-  let pos = 0
-  let first = true
-  for (let i = 0; i < ptCount; i++) {
-    const cp = r.POINT_PALETTE[r.POINT_INDICES[ptStart + i]]
-    if (cp === 0xFE0F) continue
-    if (!first) {
-      if (pos >= hexBuf.length) return 1
-      const c = 0x2D // '-'
-      if (c < hexBuf[pos]) return -1
-      if (c > hexBuf[pos]) return 1
-      pos++
-    }
-    first = false
-    // Write hex digits of cp and compare
-    const hexStr = cp.toString(16).toUpperCase()
-    for (let j = 0; j < hexStr.length; j++) {
-      if (pos >= hexBuf.length) return 1
-      const a = hexStr.charCodeAt(j)
-      const b = hexBuf[pos]
-      if (a < b) return -1
-      if (a > b) return 1
-      pos++
-    }
-  }
-  if (pos < hexBuf.length) return -1
-  return 0
-}
-
-function compareSc (r, slot, scBuf) {
-  const start = r.SC_OFFSETS[slot]
-  const end = r.SC_OFFSETS[slot + 1]
-  return b4a.compare(r.SC_STRINGS.subarray(start, end), scBuf)
-}
-
-// ==================== Backwards-compatible API ====================
-
-exports.toEmoji = function toEmoji (shortCode) {
-  const idx = exports.findByShortCode(shortCode)
-  if (idx < 0) return ''
-  const r = raw()
-  const base = idx * EMOJI_REC_SIZE
-  const ptPacked = r.EMOJI_RECORDS[base + 1]
-  return palettePointsToString(r, ptPacked & 0xFFFF, ptPacked >>> 16)
-}
-
-exports.toShortCode = function toShortCode (emoji) {
-  let idx = exports.findByEmoji(emoji)
-  if (idx < 0) idx = exports.findByEmoji(stripVS16(emoji))
-  if (idx < 0) return ''
-  const r = raw()
-  const base = idx * EMOJI_REC_SIZE
-  const scPacked = r.EMOJI_RECORDS[base + 2]
-  const scStart = scPacked & 0xFFFF
-  const scCount = scPacked >>> 16
-  if (scCount === 0) return ''
-  return readSc(r, scStart)
-}
-
-exports.toCodePoints = function toCodePoints (emoji) {
-  const chars = [...emoji]
-  const codes = new Array(chars.length)
-  for (let i = 0; i < codes.length; i++) {
-    codes[i] = chars[i].codePointAt(0)
-  }
-  return codes
-}
-
-// ==================== Full Data API ====================
-
-exports.decode = function decode () {
-  const r = raw()
-  const emojis = new Array(r.EMOJI_COUNT)
-  for (let ei = 0; ei < r.EMOJI_COUNT; ei++) {
-    emojis[ei] = decodeEmoji(r, ei)
-  }
-  const groups = new Array(r.GROUP_COUNT)
-  for (let i = 0; i < r.GROUP_COUNT; i++) {
-    groups[i] = {
-      key: readStr(r.STRINGS, r.GROUPS[i * 2]),
-      order: r.GROUPS[i * 2 + 1]
-    }
-  }
-  return { emojis, groups }
-}
-
-exports.decodeOne = function decodeOne (emojiIdx) {
-  return decodeEmoji(raw(), emojiIdx)
-}
-
-exports.decodeGroups = function decodeGroups () {
-  const r = raw()
+function decodeGroupsFromRaw (r) {
   const groups = new Array(r.GROUP_COUNT)
   for (let i = 0; i < r.GROUP_COUNT; i++) {
     groups[i] = {
@@ -217,8 +65,6 @@ exports.decodeGroups = function decodeGroups () {
   }
   return groups
 }
-
-// ==================== Internal Decode ====================
 
 function decodeEmoji (r, ei) {
   const base = ei * EMOJI_REC_SIZE
@@ -311,10 +157,6 @@ function deriveSkins (parentHex, parentSCs, parentPts, group) {
 
 // ==================== Helpers ====================
 
-function stripVS16 (str) {
-  return str.replace(/\uFE0F/g, '')
-}
-
 function readStr (strings, ref) {
   const offset = ref & 0xFFFFF
   const length = ref >>> 20
@@ -333,10 +175,6 @@ function getPalettePoints (r, start, count) {
   const codes = new Array(count)
   for (let i = 0; i < count; i++) codes[i] = r.POINT_PALETTE[r.POINT_INDICES[start + i]]
   return codes
-}
-
-function palettePointsToString (r, start, count) {
-  return String.fromCodePoint(...getPalettePoints(r, start, count))
 }
 
 function pointsToHex (pts) {

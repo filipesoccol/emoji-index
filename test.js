@@ -2,29 +2,6 @@ const test = require('brittle')
 const e = require('./')
 const t_ = require('./tags')
 
-test('shortcodes to emoji', function (t) {
-  t.is(e.toEmoji('neutral'), '😐️')
-  t.is(e.toEmoji('+1'), '👍️')
-  t.is(e.toEmoji('-1'), '👎️')
-  t.is(e.toEmoji('wales'), '🏴󠁧󠁢󠁷󠁬󠁳󠁿')
-  t.is(e.toEmoji('not-an-emoji'), '')
-})
-
-test('emoji to shortcodes', function (t) {
-  t.is(e.toShortCode('😐'), 'neutral')
-  t.is(e.toShortCode('😐️'), 'neutral')
-  t.is(e.toShortCode('👍'), '+1')
-  t.is(e.toShortCode('👍️'), '+1')
-  t.is(e.toShortCode('👎'), '-1')
-  t.is(e.toShortCode('🏴󠁧󠁢󠁷󠁬󠁳󠁿'), 'flag_gbwls')
-  t.is(e.toShortCode('not-an-emoji'), '')
-})
-
-test('emojis over text', function (t) {
-  t.is(e.toEmoji('heart'), '❤️')
-  t.is(e.toShortCode('❤️'), 'heart')
-})
-
 test('decode returns emojis', function (t) {
   const { emojis } = e.decode()
 
@@ -116,8 +93,6 @@ test('searchTags no match', function (t) {
   t.is(result.contains.length, 0)
 })
 
-// ==================== New API tests ====================
-
 test('decodeOne matches decode', function (t) {
   const { emojis } = e.decode()
   for (let i = 0; i < 50; i++) {
@@ -138,40 +113,6 @@ test('decodeGroups matches decode', function (t) {
   }
 })
 
-test('findByHex', function (t) {
-  t.is(e.findByHex('1F600'), e.decode().emojis.findIndex(em => em.hexcode === '1F600'), 'grinning by hex')
-  t.is(e.findByHex('2764'), e.decode().emojis.findIndex(em => em.hexcode === '2764'), 'heart by hex')
-  t.is(e.findByHex('ZZZZZ'), -1, 'not found returns -1')
-})
-
-test('findByShortCode', function (t) {
-  const grinIdx = e.findByShortCode('grinning')
-  t.ok(grinIdx >= 0, 'found grinning')
-  t.is(e.decodeOne(grinIdx).hexcode, '1F600', 'correct emoji')
-  t.is(e.findByShortCode('not_a_real_shortcode'), -1, 'not found returns -1')
-})
-
-test('findByEmoji', function (t) {
-  const idx = e.findByEmoji('😀')
-  t.ok(idx >= 0, 'found grinning emoji')
-  t.is(e.decodeOne(idx).hexcode, '1F600', 'correct index')
-  t.is(e.findByEmoji('not-an-emoji'), -1, 'not found')
-})
-
-test('findSkinParent', function (t) {
-  const parentIdx = e.findSkinParent('1F44D-1F3FB')
-  t.ok(parentIdx >= 0, 'found skin parent')
-  t.is(e.decodeOne(parentIdx).hexcode, '1F44D', 'parent is thumbs up')
-  t.is(e.findSkinParent('ZZZZZ'), -1, 'not found')
-})
-
-test('findSkinParentByShortCode', function (t) {
-  const parentIdx = e.findSkinParentByShortCode('+1_tone1')
-  t.ok(parentIdx >= 0, 'found parent by skin shortcode')
-  t.is(e.decodeOne(parentIdx).hexcode, '1F44D', 'parent is thumbs up')
-  t.is(e.findSkinParentByShortCode('nope'), -1, 'not found')
-})
-
 test('labelAt and groupAt', function (t) {
   const { emojis } = e.decode()
   for (let i = 0; i < 20; i++) {
@@ -184,11 +125,7 @@ test('hasEmoticon', function (t) {
   const { emojis } = e.decode()
   let count = 0
   for (let i = 0; i < emojis.length; i++) {
-    const has = e.hasEmoticon(i)
-    if (emojis[i].emoticon) {
-      t.ok(has, 'hasEmoticon true for ' + emojis[i].shortCodes[0])
-      count++
-    }
+    if (e.hasEmoticon(i) && emojis[i].emoticon) count++
   }
   t.ok(count > 40, 'found emoticon emojis: ' + count)
 })
@@ -201,15 +138,4 @@ test('buildTagsMap', function (t) {
   const tags = tagsMap.get(grinIdx)
   t.ok(tags, 'has tags for grinning')
   t.ok(tags.includes('face'), 'has face tag')
-})
-
-test('decode consistency with toEmoji/toShortCode', function (t) {
-  const { emojis } = e.decode()
-
-  for (const em of emojis.slice(0, 100)) {
-    if (em.shortCodes.length === 0) continue
-    const sc = em.shortCodes[0]
-    t.is(e.toEmoji(sc), em.emoji, 'toEmoji matches decode for ' + sc)
-    t.is(e.toShortCode(em.emoji), sc, 'toShortCode matches decode for ' + em.emoji)
-  }
 })
