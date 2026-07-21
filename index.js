@@ -12,6 +12,68 @@ function raw () {
   return _raw
 }
 
+// ==================== Backwards-compatible API ====================
+
+let _scToEmoji = null
+let _emojiToSc = null
+
+exports.toEmoji = function toEmoji (shortCode) {
+  initLookups()
+  return _scToEmoji.get(shortCode) || ''
+}
+
+exports.toShortCode = function toShortCode (emoji) {
+  initLookups()
+  return _emojiToSc.get(emoji) || _emojiToSc.get(stripVS16(emoji)) || ''
+}
+
+exports.toCodePoints = function toCodePoints (emoji) {
+  const chars = [...emoji]
+  const codes = new Array(chars.length)
+  for (let i = 0; i < codes.length; i++) {
+    codes[i] = chars[i].codePointAt(0)
+  }
+  return codes
+}
+
+function initLookups () {
+  if (_scToEmoji) return
+
+  _scToEmoji = new Map()
+  _emojiToSc = new Map()
+
+  const r = raw()
+
+  for (let ei = 0; ei < r.EMOJI_COUNT; ei++) {
+    const base = ei * EMOJI_REC_SIZE
+
+    const ptPacked = r.EMOJI_RECORDS[base + 1]
+    const emojiStr = palettePointsToString(r, ptPacked & 0xFFFF, ptPacked >>> 16)
+    const stripped = stripVS16(emojiStr)
+
+    const scPacked = r.EMOJI_RECORDS[base + 2]
+    const scStart = scPacked & 0xFFFF
+    const scCount = scPacked >>> 16
+
+    for (let i = 0; i < scCount; i++) {
+      const sc = readSc(r, scStart + i)
+      _scToEmoji.set(sc, emojiStr)
+      if (i === 0) {
+        _emojiToSc.set(emojiStr, sc)
+        if (stripped !== emojiStr) _emojiToSc.set(stripped, sc)
+      }
+    }
+  }
+}
+
+function stripVS16 (str) {
+  return str.replace(/\uFE0F/g, '')
+}
+
+function palettePointsToString (r, start, count) {
+  return String.fromCodePoint(...getPalettePoints(r, start, count))
+}
+
 // ==================== Full Data API ====================
 
 exports.decode = function decode () {
