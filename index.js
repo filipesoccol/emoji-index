@@ -12,19 +12,100 @@ function raw () {
   return _raw
 }
 
+// ==================== Linear Scan Lookups (zero allocation) ====================
+
+exports.findByHex = function findByHex (hex) {
+  if (!hex) return -1
+  const r = raw()
+  const hexBuf = b4a.from(hex)
+  for (let ei = 0; ei < r.EMOJI_COUNT; ei++) {
+    const ptPacked = r.EMOJI_RECORDS[ei * EMOJI_REC_SIZE + 1]
+    if (matchHex(r, ptPacked & 0xFFFF, ptPacked >>> 16, hexBuf)) return ei
+  }
+  return -1
+}
+
+exports.findByShortCode = function findByShortCode (sc) {
+  if (!sc) return -1
+  const r = raw()
+  const scBuf = b4a.from(sc)
+  for (let ei = 0; ei < r.EMOJI_COUNT; ei++) {
+    const scPacked = r.EMOJI_RECORDS[ei * EMOJI_REC_SIZE + 2]
+    const scStart = scPacked & 0xFFFF
+    const scCount = scPacked >>> 16
+    for (let i = 0; i < scCount; i++) {
+      if (matchSc(r, scStart + i, scBuf)) return ei
+    }
+  }
+  return -1
+}
+
+exports.findByEmoji = function findByEmoji (emojiStr) {
+  if (!emojiStr) return -1
+  const r = raw()
+  const stripped = stripVS16(emojiStr)
+  for (let ei = 0; ei < r.EMOJI_COUNT; ei++) {
+    const ptPacked = r.EMOJI_RECORDS[ei * EMOJI_REC_SIZE + 1]
+    const str = palettePointsToString(r, ptPacked & 0xFFFF, ptPacked >>> 16)
+    if (str === emojiStr || stripVS16(str) === stripped) return ei
+  }
+  return -1
+}
+
+exports.findSkinParent = function findSkinParent (hex) {
+  if (!hex) return -1
+  const r = raw()
+  const hexBuf = b4a.from(hex)
+  for (let ei = 0; ei < r.EMOJI_COUNT; ei++) {
+    const base = ei * EMOJI_REC_SIZE
+    const packed = r.EMOJI_RECORDS[base + 5]
+    const hasSkins5 = (packed >>> 4) & 1
+    if (hasSkins5) {
+      const ptPacked = r.EMOJI_RECORDS[base + 1]
+      const pts = getPalettePoints(r, ptPacked & 0xFFFF, ptPacked >>> 16)
+      const parentHex = pointsToHex(pts)
+      const hexParts = parentHex.split('-')
+      const hexFirst = hexParts[0]
+      let hexRest = hexParts.slice(1)
+      if (hexRest[0] === 'FE0F') hexRest = hexRest.slice(1)
+      for (let tone = 1; tone <= 5; tone++) {
+        const skinHex = [hexFirst, TONE_HEX[tone], ...hexRest].join('-')
+        if (skinHex === hex) return ei
+      }
+    } else {
+      const skPacked = r.EMOJI_RECORDS[base + 4]
+      const skStart = skPacked & 0xFFFF
+      const skCount = skPacked >>> 16
+      for (let si = 0; si < skCount; si++) {
+        const skBase = (skStart + si) * SKIN_REC_SIZE
+        const skPtPacked = r.SKIN_RECORDS[skBase]
+        if (matchHex(r, skPtPacked & 0xFFFF, skPtPacked >>> 16, hexBuf)) return ei
+      }
+    }
+  }
+  return -1
+}
+
+exports.decodeOne = function decodeOne (emojiIdx) {
+  return decodeEmoji(raw(), emojiIdx)
+}
+
 // ==================== Backwards-compatible API ====================
 
-let _scToEmoji = null
-let _emojiToSc = null
-
 exports.toEmoji = function toEmoji (shortCode) {
-  initLookups()
-  return _scToEmoji.get(shortCode) || ''
+  const ei = exports.findByShortCode(shortCode)
+  if (ei < 0) return ''
+  const r = raw()
+  const ptPacked = r.EMOJI_RECORDS[ei * EMOJI_REC_SIZE + 1]
+  return palettePointsToString(r, ptPacked & 0xFFFF, ptPacked >>> 16)
 }
 
 exports.toShortCode = function toShortCode (emoji) {
-  initLookups()
-  return _emojiToSc.get(emoji) || _emojiToSc.get(stripVS16(emoji)) || ''
+  const ei = exports.findByEmoji(emoji)
+  if (ei < 0) return ''
+  const r = raw()
+  const scPacked = r.EMOJI_RECORDS[ei * EMOJI_REC_SIZE + 2]
+  return readSc(r, scPacked & 0xFFFF)
 }
 
 exports.toCodePoints = function toCodePoints (emoji) {
@@ -36,34 +117,33 @@ exports.toCodePoints = function toCodePoints (emoji) {
   return codes
 }
 
-function initLookups () {
-  if (_scToEmoji) return
+// ==================== Scan Helpers ====================
 
-  _scToEmoji = new Map()
-  _emojiToSc = new Map()
-
-  const r = raw()
-
-  for (let ei = 0; ei < r.EMOJI_COUNT; ei++) {
-    const base = ei * EMOJI_REC_SIZE
-
-    const ptPacked = r.EMOJI_RECORDS[base + 1]
-    const emojiStr = palettePointsToString(r, ptPacked & 0xFFFF, ptPacked >>> 16)
-    const stripped = stripVS16(emojiStr)
-
-    const scPacked = r.EMOJI_RECORDS[base + 2]
-    const scStart = scPacked & 0xFFFF
-    const scCount = scPacked >>> 16
-
-    for (let i = 0; i < scCount; i++) {
-      const sc = readSc(r, scStart + i)
-      _scToEmoji.set(sc, emojiStr)
-      if (i === 0) {
-        _emojiToSc.set(emojiStr, sc)
-        if (stripped !== emojiStr) _emojiToSc.set(stripped, sc)
-      }
+function matchHex (r, ptStart, ptCount, hexBuf) {
+  let pos = 0
+  let first = true
+  for (let i = 0; i < ptCount; i++) {
+    const cp = r.POINT_PALETTE[r.POINT_INDICES[ptStart + i]]
+    if (cp === 0xFE0F) continue
+    if (!first) {
+      if (pos >= hexBuf.length || hexBuf[pos] !== 0x2D) return false
+      pos++
+    }
+    first = false
+    const h = cp.toString(16).toUpperCase()
+    for (let j = 0; j < h.length; j++) {
+      if (pos >= hexBuf.length || hexBuf[pos] !== h.charCodeAt(j)) return false
+      pos++
     }
   }
+  return pos === hexBuf.length
+}
+
+function matchSc (r, slot, scBuf) {
+  const start = r.SC_OFFSETS[slot]
+  const end = r.SC_OFFSETS[slot + 1]
+  if (end - start !== scBuf.length) return false
+  return b4a.compare(r.SC_STRINGS.subarray(start, end), scBuf) === 0
 }
 
 function stripVS16 (str) {

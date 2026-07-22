@@ -116,6 +116,42 @@ test('searchTags no match', function (t) {
   t.is(result.contains.length, 0)
 })
 
+test('findByHex', function (t) {
+  const idx = e.findByHex('1F600')
+  t.ok(idx >= 0, 'found grinning')
+  t.is(e.decodeOne(idx).hexcode, '1F600', 'correct emoji')
+  t.is(e.findByHex('ZZZZZ'), -1, 'not found')
+})
+
+test('findByShortCode', function (t) {
+  const idx = e.findByShortCode('grinning')
+  t.ok(idx >= 0, 'found grinning')
+  t.is(e.decodeOne(idx).hexcode, '1F600', 'correct emoji')
+  t.is(e.findByShortCode('not_a_real_shortcode'), -1, 'not found')
+})
+
+test('findByEmoji', function (t) {
+  const idx = e.findByEmoji('😀')
+  t.ok(idx >= 0, 'found grinning')
+  t.is(e.decodeOne(idx).hexcode, '1F600', 'correct emoji')
+  t.is(e.findByEmoji('not-an-emoji'), -1, 'not found')
+})
+
+test('findSkinParent', function (t) {
+  const parentIdx = e.findSkinParent('1F44D-1F3FB')
+  t.ok(parentIdx >= 0, 'found skin parent')
+  t.is(e.decodeOne(parentIdx).hexcode, '1F44D', 'parent is thumbs up')
+  t.is(e.findSkinParent('ZZZZZ'), -1, 'not found')
+})
+
+test('decodeOne', function (t) {
+  const { emojis } = e.decode()
+  for (let i = 0; i < 20; i++) {
+    const one = e.decodeOne(i)
+    t.is(one.emoji, emojis[i].emoji, 'matches at ' + i)
+  }
+})
+
 test('decode consistency with toEmoji/toShortCode', function (t) {
   const { emojis } = e.decode()
 
