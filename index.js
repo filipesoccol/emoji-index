@@ -86,35 +86,6 @@ exports.decode = function decode () {
   return { emojis, groups }
 }
 
-exports.decodeOne = function decodeOne (emojiIdx) {
-  return decodeEmoji(raw(), emojiIdx)
-}
-
-exports.decodeGroups = function decodeGroups () {
-  return decodeGroupsFromRaw(raw())
-}
-
-// ==================== Lightweight Accessors ====================
-
-exports.emojiCount = function emojiCount () {
-  return raw().EMOJI_COUNT
-}
-
-exports.labelAt = function labelAt (emojiIdx) {
-  const r = raw()
-  return readStr(r.STRINGS, r.EMOJI_RECORDS[emojiIdx * EMOJI_REC_SIZE])
-}
-
-exports.groupAt = function groupAt (emojiIdx) {
-  const r = raw()
-  return r.EMOJI_RECORDS[emojiIdx * EMOJI_REC_SIZE + 5] & 0xF
-}
-
-exports.hasEmoticon = function hasEmoticon (emojiIdx) {
-  const r = raw()
-  return (r.EMOJI_RECORDS[emojiIdx * EMOJI_REC_SIZE + 3] >>> 16) > 0
-}
-
 // ==================== Internal Decode ====================
 
 function decodeGroupsFromRaw (r) {

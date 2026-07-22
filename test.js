@@ -116,49 +116,13 @@ test('searchTags no match', function (t) {
   t.is(result.contains.length, 0)
 })
 
-test('decodeOne matches decode', function (t) {
+test('decode consistency with toEmoji/toShortCode', function (t) {
   const { emojis } = e.decode()
-  for (let i = 0; i < 50; i++) {
-    const one = e.decodeOne(i)
-    t.is(one.emoji, emojis[i].emoji, 'emoji matches at ' + i)
-    t.is(one.hexcode, emojis[i].hexcode, 'hexcode matches at ' + i)
-    t.is(one.label, emojis[i].label, 'label matches at ' + i)
-  }
-})
 
-test('decodeGroups matches decode', function (t) {
-  const { groups } = e.decode()
-  const groups2 = e.decodeGroups()
-  t.is(groups2.length, groups.length, 'same count')
-  for (let i = 0; i < groups.length; i++) {
-    t.is(groups2[i].key, groups[i].key, 'key matches at ' + i)
-    t.is(groups2[i].order, groups[i].order, 'order matches at ' + i)
+  for (const em of emojis.slice(0, 100)) {
+    if (em.shortCodes.length === 0) continue
+    const sc = em.shortCodes[0]
+    t.is(e.toEmoji(sc), em.emoji, 'toEmoji matches decode for ' + sc)
+    t.is(e.toShortCode(em.emoji), sc, 'toShortCode matches decode for ' + em.emoji)
   }
-})
-
-test('labelAt and groupAt', function (t) {
-  const { emojis } = e.decode()
-  for (let i = 0; i < 20; i++) {
-    t.is(e.labelAt(i), emojis[i].label, 'label matches at ' + i)
-    t.is(e.groupAt(i), emojis[i].group, 'group matches at ' + i)
-  }
-})
-
-test('hasEmoticon', function (t) {
-  const { emojis } = e.decode()
-  let count = 0
-  for (let i = 0; i < emojis.length; i++) {
-    if (e.hasEmoticon(i) && emojis[i].emoticon) count++
-  }
-  t.ok(count > 40, 'found emoticon emojis: ' + count)
-})
-
-test('buildTagsMap', function (t) {
-  const { emojis } = e.decode()
-  const grinIdx = emojis.findIndex(em => em.shortCodes.includes('grinning'))
-  const tagsMap = t_.buildTagsMap()
-  t.ok(tagsMap.size > 0, 'map has entries: ' + tagsMap.size)
-  const tags = tagsMap.get(grinIdx)
-  t.ok(tags, 'has tags for grinning')
-  t.ok(tags.includes('face'), 'has face tag')
 })

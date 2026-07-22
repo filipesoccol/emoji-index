@@ -77,24 +77,6 @@ exports.attachTags = function attachTags (emojis) {
   }
 }
 
-exports.buildTagsMap = function buildTagsMap () {
-  const r = raw()
-  const tags = tagStrs()
-  const map = new Map()
-  for (let ti = 0; ti < r.TAG_COUNT; ti++) {
-    const tag = tags[ti]
-    const start = r.POSTING_OFFSETS[ti]
-    const end = r.POSTING_OFFSETS[ti + 1]
-    for (let i = start; i < end; i++) {
-      const eid = r.POSTINGS[i]
-      let arr = map.get(eid)
-      if (!arr) { arr = []; map.set(eid, arr) }
-      arr.push(tag)
-    }
-  }
-  return map
-}
-
 function appendPosting (r, ti, out) {
   const start = r.POSTING_OFFSETS[ti]
   const end = r.POSTING_OFFSETS[ti + 1]
