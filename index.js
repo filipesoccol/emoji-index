@@ -90,6 +90,43 @@ exports.decodeOne = function decodeOne (emojiIdx) {
   return decodeEmoji(raw(), emojiIdx)
 }
 
+exports.shortCodesAt = function shortCodesAt (emojiIdx) {
+  const r = raw()
+  const scPacked = r.EMOJI_RECORDS[emojiIdx * EMOJI_REC_SIZE + 2]
+  const scStart = scPacked & 0xFFFF
+  const scCount = scPacked >>> 16
+  const result = new Array(scCount)
+  for (let i = 0; i < scCount; i++) result[i] = readSc(r, scStart + i)
+  return result
+}
+
+exports.emoticonsAt = function emoticonsAt (emojiIdx) {
+  const r = raw()
+  const emPacked = r.EMOJI_RECORDS[emojiIdx * EMOJI_REC_SIZE + 3]
+  const emStart = emPacked & 0xFFFF
+  const emCount = emPacked >>> 16
+  if (emCount === 0) return undefined
+  const result = new Array(emCount)
+  for (let i = 0; i < emCount; i++) result[i] = readStr(r.STRINGS, r.EMOTICONS[emStart + i])
+  return result
+}
+
+exports.groupAt = function groupAt (emojiIdx) {
+  const r = raw()
+  return r.EMOJI_RECORDS[emojiIdx * EMOJI_REC_SIZE + 5] & 0xF
+}
+
+exports.orderAt = function orderAt (emojiIdx) {
+  const r = raw()
+  const packed = r.EMOJI_RECORDS[emojiIdx * EMOJI_REC_SIZE + 5]
+  const order = packed >>> 5
+  return order > 0 ? order - 1 : -1
+}
+
+exports.emojiCount = function emojiCount () {
+  return raw().EMOJI_COUNT
+}
+
 // ==================== Backwards-compatible API ====================
 
 exports.toEmoji = function toEmoji (shortCode) {
@@ -222,8 +259,7 @@ function decodeEmoji (r, ei) {
     }
   }
 
-  const label = readStr(r.STRINGS, r.EMOJI_RECORDS[base])
-  const obj = { label, hexcode, emoji, group, shortCodes }
+  const obj = { hexcode, emoji, group, shortCodes }
 
   if (order > 0) obj.order = order - 1
   if (emoticon) obj.emoticon = emoticon
@@ -245,7 +281,7 @@ function decodeSkin (r, base) {
   for (let i = 0; i < scCount; i++) shortCodes[i] = readSc(r, scStart + i)
 
   const misc = r.SKIN_RECORDS[base + 2]
-  return { label: '', hexcode, emoji, tone: misc & 0xFF, group: (misc >>> 8) & 0xF, shortCodes }
+  return { hexcode, emoji, tone: misc & 0xFF, group: (misc >>> 8) & 0xF, shortCodes }
 }
 
 function deriveSkins (parentHex, parentSCs, parentPts, group) {
@@ -262,7 +298,7 @@ function deriveSkins (parentHex, parentSCs, parentPts, group) {
     const hexcode = [hexFirst, TONE_HEX[tone], ...hexRest].join('-')
     const emoji = String.fromCodePoint(...basePts, TONE_CP[tone], ...rest)
     const shortCodes = parentSCs.map(function (s) { return s + '_tone' + tone })
-    skins[tone - 1] = { label: '', hexcode, emoji, tone, group, shortCodes }
+    skins[tone - 1] = { hexcode, emoji, tone, group, shortCodes }
   }
 
   return skins

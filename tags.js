@@ -58,6 +58,27 @@ exports.searchTags = function searchTags (term) {
   return { exact, prefix, contains }
 }
 
+/**
+ * Returns all tags for a single emoji by its binary index.
+ * Scans all tags and collects those whose posting list contains emojiIdx.
+ *
+ * @param {number} emojiIdx
+ * @returns {string[]}
+ */
+exports.tagsAt = function tagsAt (emojiIdx) {
+  const r = raw()
+  const tags = tagStrs()
+  const result = []
+  for (let ti = 0; ti < r.TAG_COUNT; ti++) {
+    const start = r.POSTING_OFFSETS[ti]
+    const end = r.POSTING_OFFSETS[ti + 1]
+    for (let i = start; i < end; i++) {
+      if (r.POSTINGS[i] === emojiIdx) { result.push(tags[ti]); break }
+    }
+  }
+  return result
+}
+
 exports.attachTags = function attachTags (emojis) {
   const r = raw()
   const tags = tagStrs()
